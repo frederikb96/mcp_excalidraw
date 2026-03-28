@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -35,12 +36,97 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const server = createServer(app);
-const wss = new WebSocketServer({ server });
+const httpServer = createServer(app);
+const wss = new WebSocketServer({ server: httpServer });
+
+// --- File-based persistence ---
+const DATA_DIR = process.env.DATA_DIR;
+let saveTimeout: NodeJS.Timeout | null = null;
+
+function buildStateObject() {
+  return {
+    elements: Array.from(elements.values()),
+    files: Array.from(files.entries()).map(([fileId, f]) => ({ fileId, ...f })),
+    snapshots: Array.from(snapshots.values()),
+  };
+}
+
+function saveState(): void {
+  if (!DATA_DIR) return;
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    try {
+      fs.writeFileSync(path.join(DATA_DIR, 'state.json'), JSON.stringify(buildStateObject()));
+      logger.debug(`State saved: ${elements.size} elements, ${files.size} files`);
+    } catch (error) {
+      logger.error('Failed to save state:', error);
+    }
+  }, 1000);
+}
+
+function saveStateSync(): void {
+  if (!DATA_DIR) return;
+  if (saveTimeout) clearTimeout(saveTimeout);
+  try {
+    fs.writeFileSync(path.join(DATA_DIR, 'state.json'), JSON.stringify(buildStateObject()));
+    logger.info(`State saved on shutdown: ${elements.size} elements`);
+  } catch (error) {
+    logger.error('Failed to save state on shutdown:', error);
+  }
+}
+
+function loadState(): void {
+  if (!DATA_DIR) return;
+  const statePath = path.join(DATA_DIR, 'state.json');
+  if (!fs.existsSync(statePath)) {
+    logger.info('No persisted state found, starting fresh');
+    return;
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+    if (data.elements) {
+      for (const el of data.elements) elements.set(el.id, el);
+    }
+    if (data.files) {
+      for (const f of data.files) {
+        const { fileId, ...fileData } = f;
+        files.set(fileId, fileData as ExcalidrawFile);
+      }
+    }
+    if (data.snapshots) {
+      for (const s of data.snapshots) {
+        snapshots.set(s.name, s as Snapshot);
+      }
+    }
+    logger.info(`State loaded: ${elements.size} elements, ${files.size} files, ${snapshots.size} snapshots`);
+  } catch (error) {
+    logger.error('Failed to load state:', error);
+  }
+}
+
+loadState();
+
+process.on('SIGTERM', () => {
+  saveStateSync();
+  process.exit(0);
+});
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// Auto-save state after successful mutations
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (!DATA_DIR) return next();
+  const origJson = res.json.bind(res);
+  res.json = ((body: any) => {
+    if (['POST', 'PUT', 'DELETE'].includes(req.method) && body?.success !== false) {
+      saveState();
+    }
+    return origJson(body);
+  }) as any;
+  next();
+});
 
 // Serve static files from the build directory
 const staticDir = path.join(__dirname, '../dist');
@@ -1199,9 +1285,10 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || 'localhost';
 
-server.listen(PORT, HOST, () => {
-  logger.info(`POC server running on http://${HOST}:${PORT}`);
+httpServer.listen(PORT, HOST, () => {
+  logger.info(`Canvas server running on http://${HOST}:${PORT}`);
   logger.info(`WebSocket server running on ws://${HOST}:${PORT}`);
+  if (DATA_DIR) logger.info(`Persistence enabled: ${DATA_DIR}`);
 });
 
 export default app;

@@ -2235,15 +2235,43 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Start server
 async function runServer(): Promise<void> {
   try {
-    logger.info('Starting Excalidraw MCP server...');
+    const transportType = process.env.MCP_TRANSPORT || 'stdio';
+    logger.info(`Starting Excalidraw MCP server (transport: ${transportType})...`);
 
-    const transport = new StdioServerTransport();
-    logger.debug('Connecting to stdio transport...');
+    if (transportType === 'http') {
+      const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
+      const expressModule = await import('express');
+      const expressApp = expressModule.default();
+      expressApp.use(expressModule.default.json());
 
-    await server.connect(transport);
-    logger.info('Excalidraw MCP server running on stdio');
+      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+      await server.connect(transport);
 
-    process.stdin.resume();
+      expressApp.post('/mcp', async (req: any, res: any) => {
+        await transport.handleRequest(req, res, req.body);
+      });
+      expressApp.get('/mcp', async (req: any, res: any) => {
+        await transport.handleRequest(req, res);
+      });
+      expressApp.delete('/mcp', async (req: any, res: any) => {
+        await transport.handleRequest(req, res);
+      });
+      expressApp.get('/health', (_req: any, res: any) => {
+        res.json({ status: 'healthy', transport: 'http' });
+      });
+
+      const port = parseInt(process.env.MCP_PORT || '8080', 10);
+      const host = process.env.MCP_HOST || '0.0.0.0';
+      expressApp.listen(port, host, () => {
+        logger.info(`MCP server running on http://${host}:${port}/mcp`);
+      });
+    } else {
+      const transport = new StdioServerTransport();
+      logger.debug('Connecting to stdio transport...');
+      await server.connect(transport);
+      logger.info('Excalidraw MCP server running on stdio');
+      process.stdin.resume();
+    }
   } catch (error) {
     logger.error('Error starting server:', error);
     process.stderr.write(`Failed to start MCP server: ${(error as Error).message}\n${(error as Error).stack}\n`);
