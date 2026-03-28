@@ -756,6 +756,46 @@ const tools: Tool[] = [
     }
   },
   {
+    name: 'list_snapshots',
+    description: 'List all saved snapshots with their names, element counts, and creation timestamps',
+    inputSchema: {
+      type: 'object',
+      properties: {}
+    }
+  },
+  {
+    name: 'delete_snapshot',
+    description: 'Delete a saved snapshot by name',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Name of the snapshot to delete'
+        }
+      },
+      required: ['name']
+    }
+  },
+  {
+    name: 'rename_snapshot',
+    description: 'Rename a saved snapshot',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Current name of the snapshot'
+        },
+        newName: {
+          type: 'string',
+          description: 'New name for the snapshot'
+        }
+      },
+      required: ['name', 'newName']
+    }
+  },
+  {
     name: 'describe_scene',
     description: 'Get an AI-readable description of the current canvas: element types, positions, connections, labels, spatial layout, and bounding box. Use this to understand what is on the canvas before making changes.',
     inputSchema: {
@@ -1735,6 +1775,50 @@ server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest)
             text: `Snapshot "${params.name}" restored (${data.snapshot.elements.length} elements)\n\n✅ Canvas updated`
           }]
         };
+      }
+
+      case 'list_snapshots': {
+        logger.info('Listing snapshots via MCP');
+        const response = await fetch(`${EXPRESS_SERVER_URL}/api/snapshots`);
+        if (!response.ok) {
+          throw new Error(`Failed to list snapshots: ${response.status}`);
+        }
+        const data = await response.json() as any;
+        const list = data.snapshots || [];
+        if (list.length === 0) {
+          return { content: [{ type: 'text', text: 'No snapshots saved.' }] };
+        }
+        const lines = list.map((s: any) => `- **${s.name}** (${s.elementCount} elements, ${s.createdAt})`);
+        return {
+          content: [{ type: 'text', text: `## Saved Snapshots (${list.length})\n\n${lines.join('\n')}` }]
+        };
+      }
+
+      case 'delete_snapshot': {
+        const params = z.object({ name: z.string() }).parse(args);
+        logger.info('Deleting snapshot via MCP', { name: params.name });
+        const response = await fetch(`${EXPRESS_SERVER_URL}/api/snapshots/${encodeURIComponent(params.name)}`, {
+          method: 'DELETE'
+        });
+        if (!response.ok) {
+          throw new Error(`Snapshot "${params.name}" not found`);
+        }
+        return { content: [{ type: 'text', text: `Snapshot "${params.name}" deleted.` }] };
+      }
+
+      case 'rename_snapshot': {
+        const params = z.object({ name: z.string(), newName: z.string() }).parse(args);
+        logger.info('Renaming snapshot via MCP', { name: params.name, newName: params.newName });
+        const response = await fetch(`${EXPRESS_SERVER_URL}/api/snapshots/${encodeURIComponent(params.name)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newName: params.newName })
+        });
+        if (!response.ok) {
+          const err = await response.json() as any;
+          throw new Error(err.error || `Failed to rename snapshot: ${response.status}`);
+        }
+        return { content: [{ type: 'text', text: `Snapshot renamed: "${params.name}" → "${params.newName}"` }] };
       }
 
       case 'describe_scene': {

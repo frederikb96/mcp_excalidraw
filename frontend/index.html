@@ -214,6 +214,121 @@
             font-size: 14px;
             color: #666;
         }
+
+        /* Snapshot Library Panel */
+        .snapshot-dropdown-container {
+            position: relative;
+        }
+
+        .btn-diagrams {
+            background-color: #6366f1;
+            color: white;
+            font-weight: 500;
+        }
+
+        .btn-diagrams:hover, .btn-diagrams.active {
+            background-color: #4f46e5;
+        }
+
+        .snapshot-panel {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            margin-top: 8px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+            width: 340px;
+            max-height: 420px;
+            overflow-y: auto;
+            z-index: 2000;
+            border: 1px solid #e0e0e0;
+        }
+
+        .snapshot-save {
+            display: flex;
+            gap: 8px;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .snapshot-save input {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .snapshot-save .btn-success {
+            padding: 6px 14px;
+            font-size: 13px;
+        }
+
+        .snapshot-empty {
+            padding: 24px;
+            text-align: center;
+            color: #999;
+            font-size: 14px;
+        }
+
+        .snapshot-list {
+            padding: 4px 0;
+        }
+
+        .snapshot-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            border-bottom: 1px solid #f5f5f5;
+            transition: background 0.15s;
+        }
+
+        .snapshot-item:hover {
+            background: #f8f9ff;
+        }
+
+        .snapshot-item:last-child {
+            border-bottom: none;
+        }
+
+        .snapshot-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            cursor: default;
+            min-width: 0;
+            flex: 1;
+        }
+
+        .snapshot-name {
+            font-size: 14px;
+            font-weight: 500;
+            color: #333;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .snapshot-meta {
+            font-size: 11px;
+            color: #999;
+        }
+
+        .snapshot-actions {
+            display: flex;
+            gap: 4px;
+            margin-left: 8px;
+            flex-shrink: 0;
+        }
+
+        .btn-sm {
+            padding: 4px 8px;
+            font-size: 13px;
+            border-radius: 4px;
+            min-width: 28px;
+        }
         
         .loading {
             display: flex;

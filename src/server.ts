@@ -1237,6 +1237,83 @@ app.get('/api/snapshots/:name', (req: Request, res: Response) => {
   }
 });
 
+// Snapshots: delete
+app.delete('/api/snapshots/:name', (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    if (!snapshots.has(name!)) {
+      return res.status(404).json({
+        success: false,
+        error: `Snapshot "${name}" not found`
+      });
+    }
+    snapshots.delete(name!);
+    logger.info(`Snapshot deleted: "${name}"`);
+    res.json({ success: true, message: `Snapshot "${name}" deleted` });
+  } catch (error) {
+    logger.error('Error deleting snapshot:', error);
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+// Snapshots: rename
+app.put('/api/snapshots/:name', (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const { newName } = req.body;
+    if (!newName || typeof newName !== 'string') {
+      return res.status(400).json({ success: false, error: 'newName is required' });
+    }
+    const snapshot = snapshots.get(name!);
+    if (!snapshot) {
+      return res.status(404).json({ success: false, error: `Snapshot "${name}" not found` });
+    }
+    if (snapshots.has(newName) && newName !== name) {
+      return res.status(409).json({ success: false, error: `Snapshot "${newName}" already exists` });
+    }
+    snapshots.delete(name!);
+    snapshot.name = newName;
+    snapshots.set(newName, snapshot);
+    logger.info(`Snapshot renamed: "${name}" → "${newName}"`);
+    res.json({ success: true, name: newName, elementCount: snapshot.elements.length });
+  } catch (error) {
+    logger.error('Error renaming snapshot:', error);
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+// Snapshots: restore (server-side clear + load)
+app.post('/api/snapshots/:name/restore', (req: Request, res: Response) => {
+  try {
+    const { name } = req.params;
+    const snapshot = snapshots.get(name!);
+    if (!snapshot) {
+      return res.status(404).json({ success: false, error: `Snapshot "${name}" not found` });
+    }
+    // Clear current elements
+    elements.clear();
+    // Load snapshot elements
+    for (const el of snapshot.elements) {
+      elements.set(el.id, el);
+    }
+    // Broadcast full state to all connected browsers
+    broadcast({
+      type: 'initial_elements',
+      elements: Array.from(elements.values())
+    } as any);
+    logger.info(`Snapshot restored: "${name}" (${snapshot.elements.length} elements)`);
+    res.json({
+      success: true,
+      name,
+      elementCount: snapshot.elements.length,
+      message: `Restored "${name}"`
+    });
+  } catch (error) {
+    logger.error('Error restoring snapshot:', error);
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
 // Serve the frontend
 app.get('/', (req: Request, res: Response) => {
   const htmlFile = path.join(__dirname, '../dist/frontend/index.html');

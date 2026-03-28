@@ -80,6 +80,12 @@ interface ApiResponse {
 type SyncStatus = 'idle' | 'syncing' | 'success' | 'error';
 const AUTO_SYNC_DEBOUNCE_MS = 1200;
 
+interface SnapshotInfo {
+  name: string;
+  elementCount: number;
+  createdAt: string;
+}
+
 // Helper function to clean elements for Excalidraw
 const cleanElementForExcalidraw = (element: ServerElement): Partial<ExcalidrawElement> => {
   const {
@@ -273,6 +279,78 @@ function App(): JSX.Element {
   }, [excalidrawAPI])
   const [isConnected, setIsConnected] = useState<boolean>(false)
   const websocketRef = useRef<WebSocket | null>(null)
+
+  // Snapshot library state
+  const [showSnapshots, setShowSnapshots] = useState(false)
+  const [snapshotList, setSnapshotList] = useState<SnapshotInfo[]>([])
+  const [snapshotName, setSnapshotName] = useState('')
+  const [snapshotLoading, setSnapshotLoading] = useState(false)
+
+  const fetchSnapshots = async () => {
+    try {
+      const res = await fetch('/api/snapshots')
+      const data = await res.json()
+      if (data.success) setSnapshotList(data.snapshots || [])
+    } catch (e) { console.error('Failed to fetch snapshots:', e) }
+  }
+
+  const saveSnapshot = async () => {
+    const name = snapshotName.trim()
+    if (!name) return
+    try {
+      setSnapshotLoading(true)
+      // Sync current canvas to backend first
+      await syncToBackend({ silent: true })
+      await fetch('/api/snapshots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      })
+      setSnapshotName('')
+      await fetchSnapshots()
+    } catch (e) { console.error('Failed to save snapshot:', e) }
+    finally { setSnapshotLoading(false) }
+  }
+
+  const restoreSnapshotUI = async (name: string) => {
+    try {
+      setSnapshotLoading(true)
+      const res = await fetch(`/api/snapshots/${encodeURIComponent(name)}/restore`, { method: 'POST' })
+      const data = await res.json()
+      if (data.success) {
+        // Reload elements from backend
+        await loadExistingElements()
+        setShowSnapshots(false)
+      }
+    } catch (e) { console.error('Failed to restore snapshot:', e) }
+    finally { setSnapshotLoading(false) }
+  }
+
+  const deleteSnapshotUI = async (name: string) => {
+    if (!confirm(`Delete snapshot "${name}"?`)) return
+    try {
+      await fetch(`/api/snapshots/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      await fetchSnapshots()
+    } catch (e) { console.error('Failed to delete snapshot:', e) }
+  }
+
+  const renameSnapshotUI = async (oldName: string) => {
+    const newName = prompt('Rename snapshot:', oldName)
+    if (!newName || newName === oldName) return
+    try {
+      await fetch(`/api/snapshots/${encodeURIComponent(oldName)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName })
+      })
+      await fetchSnapshots()
+    } catch (e) { console.error('Failed to rename snapshot:', e) }
+  }
+
+  // Fetch snapshots when panel opens
+  useEffect(() => {
+    if (showSnapshots) fetchSnapshots()
+  }, [showSnapshots])
 
   // Sync state management
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('idle')
@@ -868,6 +946,54 @@ function App(): JSX.Element {
                 </span>
               )}
             </div>
+          </div>
+
+          <div className="snapshot-dropdown-container">
+            <button
+              className={`btn-diagrams ${showSnapshots ? 'active' : ''}`}
+              onClick={() => setShowSnapshots(!showSnapshots)}
+            >
+              {showSnapshots ? '✕ Close' : `📁 Diagrams (${snapshotList.length})`}
+            </button>
+            {showSnapshots && (
+              <div className="snapshot-panel">
+                <div className="snapshot-save">
+                  <input
+                    type="text"
+                    placeholder="Diagram name..."
+                    value={snapshotName}
+                    onChange={e => setSnapshotName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveSnapshot()}
+                    disabled={snapshotLoading}
+                  />
+                  <button className="btn-success" onClick={saveSnapshot} disabled={!snapshotName.trim() || snapshotLoading}>
+                    Save
+                  </button>
+                </div>
+                {snapshotList.length === 0 ? (
+                  <div className="snapshot-empty">No saved diagrams yet</div>
+                ) : (
+                  <div className="snapshot-list">
+                    {snapshotList.map(s => (
+                      <div key={s.name} className="snapshot-item">
+                        <div className="snapshot-info" onDoubleClick={() => renameSnapshotUI(s.name)} title="Double-click to rename">
+                          <span className="snapshot-name">{s.name}</span>
+                          <span className="snapshot-meta">{s.elementCount} elements</span>
+                        </div>
+                        <div className="snapshot-actions">
+                          <button className="btn-sm btn-primary" onClick={() => restoreSnapshotUI(s.name)} disabled={snapshotLoading} title="Restore">
+                            ↩
+                          </button>
+                          <button className="btn-sm btn-danger" onClick={() => deleteSnapshotUI(s.name)} title="Delete">
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <button className="btn-secondary" onClick={clearCanvas}>Clear Canvas</button>
