@@ -283,69 +283,99 @@ function App(): JSX.Element {
   // Snapshot library state
   const [showSnapshots, setShowSnapshots] = useState(false)
   const [snapshotList, setSnapshotList] = useState<SnapshotInfo[]>([])
-  const [snapshotName, setSnapshotName] = useState('')
+  const [snapshotFilter, setSnapshotFilter] = useState('')
   const [snapshotLoading, setSnapshotLoading] = useState(false)
+  const [currentSnapshot, setCurrentSnapshot] = useState<string | null>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   const fetchSnapshots = async () => {
     try {
       const res = await fetch('/api/snapshots')
       const data = await res.json()
-      if (data.success) setSnapshotList(data.snapshots || [])
+      if (data.success) {
+        const sorted = (data.snapshots || []).sort((a: SnapshotInfo, b: SnapshotInfo) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        )
+        setSnapshotList(sorted)
+      }
     } catch (e) { console.error('Failed to fetch snapshots:', e) }
   }
 
-  const saveSnapshot = async () => {
-    const name = snapshotName.trim()
-    if (!name) return
+  const saveCurrentSnapshot = async () => {
+    if (!currentSnapshot) return
     try {
       setSnapshotLoading(true)
-      // Sync current canvas to backend first
       await syncToBackend({ silent: true })
       await fetch('/api/snapshots', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name })
+        body: JSON.stringify({ name: currentSnapshot })
       })
-      setSnapshotName('')
+      setHasUnsavedChanges(false)
+      await fetchSnapshots()
+    } catch (e) { console.error('Failed to save snapshot:', e) }
+    finally { setSnapshotLoading(false) }
+  }
+
+  const saveAsNewSnapshot = async () => {
+    const name = prompt('Save as new diagram:')
+    if (!name?.trim()) return
+    try {
+      setSnapshotLoading(true)
+      await syncToBackend({ silent: true })
+      await fetch('/api/snapshots', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() })
+      })
+      setCurrentSnapshot(name.trim())
+      setHasUnsavedChanges(false)
       await fetchSnapshots()
     } catch (e) { console.error('Failed to save snapshot:', e) }
     finally { setSnapshotLoading(false) }
   }
 
   const restoreSnapshotUI = async (name: string) => {
+    if (hasUnsavedChanges && !confirm('Unsaved changes will be lost. Continue?')) return
     try {
       setSnapshotLoading(true)
       const res = await fetch(`/api/snapshots/${encodeURIComponent(name)}/restore`, { method: 'POST' })
       const data = await res.json()
       if (data.success) {
-        // Reload elements from backend
         await loadExistingElements()
-        setShowSnapshots(false)
+        setCurrentSnapshot(name)
+        setHasUnsavedChanges(false)
       }
     } catch (e) { console.error('Failed to restore snapshot:', e) }
     finally { setSnapshotLoading(false) }
   }
 
   const deleteSnapshotUI = async (name: string) => {
-    if (!confirm(`Delete snapshot "${name}"?`)) return
+    if (!confirm(`Delete "${name}"?`)) return
     try {
       await fetch(`/api/snapshots/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      if (currentSnapshot === name) setCurrentSnapshot(null)
       await fetchSnapshots()
     } catch (e) { console.error('Failed to delete snapshot:', e) }
   }
 
   const renameSnapshotUI = async (oldName: string) => {
-    const newName = prompt('Rename snapshot:', oldName)
-    if (!newName || newName === oldName) return
+    const newName = prompt('Rename diagram:', oldName)
+    if (!newName?.trim() || newName === oldName) return
     try {
       await fetch(`/api/snapshots/${encodeURIComponent(oldName)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newName })
+        body: JSON.stringify({ newName: newName.trim() })
       })
+      if (currentSnapshot === oldName) setCurrentSnapshot(newName.trim())
       await fetchSnapshots()
     } catch (e) { console.error('Failed to rename snapshot:', e) }
   }
+
+  const filteredSnapshots = snapshotList.filter(s =>
+    s.name.toLowerCase().includes(snapshotFilter.toLowerCase())
+  )
 
   // Fetch snapshots when panel opens
   useEffect(() => {
@@ -881,6 +911,8 @@ function App(): JSX.Element {
   }
 
   const clearCanvas = async (): Promise<void> => {
+    setCurrentSnapshot(null)
+    setHasUnsavedChanges(false)
     if (excalidrawAPI) {
       try {
         // Get all current elements and delete them from backend
@@ -953,45 +985,58 @@ function App(): JSX.Element {
               className={`btn-diagrams ${showSnapshots ? 'active' : ''}`}
               onClick={() => setShowSnapshots(!showSnapshots)}
             >
-              {showSnapshots ? '✕ Close' : `📁 Diagrams (${snapshotList.length})`}
+              {showSnapshots ? '✕ Close' : `📁 Diagrams${snapshotList.length ? ` (${snapshotList.length})` : ''}`}
             </button>
             {showSnapshots && (
               <div className="snapshot-panel">
-                <div className="snapshot-save">
+                <div className="snapshot-filter">
                   <input
                     type="text"
-                    placeholder="Diagram name..."
-                    value={snapshotName}
-                    onChange={e => setSnapshotName(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && saveSnapshot()}
-                    disabled={snapshotLoading}
+                    placeholder="Filter diagrams..."
+                    value={snapshotFilter}
+                    onChange={e => setSnapshotFilter(e.target.value)}
                   />
-                  <button className="btn-success" onClick={saveSnapshot} disabled={!snapshotName.trim() || snapshotLoading}>
-                    Save
-                  </button>
                 </div>
-                {snapshotList.length === 0 ? (
-                  <div className="snapshot-empty">No saved diagrams yet</div>
+                {filteredSnapshots.length === 0 ? (
+                  <div className="snapshot-empty">{snapshotList.length === 0 ? 'No saved diagrams yet' : 'No matches'}</div>
                 ) : (
                   <div className="snapshot-list">
-                    {snapshotList.map(s => (
-                      <div key={s.name} className="snapshot-item">
-                        <div className="snapshot-info" onDoubleClick={() => renameSnapshotUI(s.name)} title="Double-click to rename">
+                    {filteredSnapshots.map(s => (
+                      <div
+                        key={s.name}
+                        className={`snapshot-item ${currentSnapshot === s.name ? 'snapshot-active' : ''}`}
+                        onClick={() => restoreSnapshotUI(s.name)}
+                        title="Click to load, double-click to rename"
+                        onDoubleClick={e => { e.stopPropagation(); renameSnapshotUI(s.name) }}
+                      >
+                        <div className="snapshot-info">
                           <span className="snapshot-name">{s.name}</span>
                           <span className="snapshot-meta">{s.elementCount} elements</span>
                         </div>
-                        <div className="snapshot-actions">
-                          <button className="btn-sm btn-primary" onClick={() => restoreSnapshotUI(s.name)} disabled={snapshotLoading} title="Restore">
-                            ↩
-                          </button>
-                          <button className="btn-sm btn-danger" onClick={() => deleteSnapshotUI(s.name)} title="Delete">
-                            ✕
-                          </button>
-                        </div>
+                        <button className="btn-sm btn-danger" onClick={e => { e.stopPropagation(); deleteSnapshotUI(s.name) }} title="Delete">
+                          ✕
+                        </button>
                       </div>
                     ))}
                   </div>
                 )}
+                <div className="snapshot-bottom">
+                  <button
+                    className="btn-sm btn-primary"
+                    onClick={saveCurrentSnapshot}
+                    disabled={!currentSnapshot || snapshotLoading}
+                    title={currentSnapshot ? `Overwrite "${currentSnapshot}"` : 'Load a diagram first'}
+                  >
+                    💾 Save
+                  </button>
+                  <button
+                    className="btn-sm btn-success"
+                    onClick={saveAsNewSnapshot}
+                    disabled={snapshotLoading}
+                  >
+                    + Save as new
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1015,6 +1060,7 @@ function App(): JSX.Element {
             excalidrawAPI={(api: ExcalidrawAPIRefValue) => setExcalidrawAPI(api)}
             onChange={() => {
               scheduleAutoSync()
+              if (userInteractedRef.current) setHasUnsavedChanges(true)
             }}
             initialData={{
               elements: [],

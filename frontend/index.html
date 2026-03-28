@@ -245,24 +245,29 @@
             border: 1px solid #e0e0e0;
         }
 
-        .snapshot-save {
-            display: flex;
-            gap: 8px;
-            padding: 12px;
+        .snapshot-filter {
+            padding: 10px 12px;
             border-bottom: 1px solid #eee;
         }
 
-        .snapshot-save input {
-            flex: 1;
+        .snapshot-filter input {
+            width: 100%;
             padding: 6px 10px;
             border: 1px solid #ddd;
             border-radius: 4px;
             font-size: 13px;
+            box-sizing: border-box;
         }
 
-        .snapshot-save .btn-success {
-            padding: 6px 14px;
-            font-size: 13px;
+        .snapshot-bottom {
+            display: flex;
+            gap: 8px;
+            padding: 10px 12px;
+            border-top: 1px solid #eee;
+        }
+
+        .snapshot-bottom button {
+            flex: 1;
         }
 
         .snapshot-empty {
@@ -282,7 +287,9 @@
             justify-content: space-between;
             padding: 8px 12px;
             border-bottom: 1px solid #f5f5f5;
+            border-left: 3px solid transparent;
             transition: background 0.15s;
+            cursor: pointer;
         }
 
         .snapshot-item:hover {
@@ -293,11 +300,19 @@
             border-bottom: none;
         }
 
+        .snapshot-active {
+            border-left-color: #6366f1;
+            background: #f0f0ff;
+        }
+
+        .snapshot-active:hover {
+            background: #e8e8ff;
+        }
+
         .snapshot-info {
             display: flex;
             flex-direction: column;
             gap: 2px;
-            cursor: default;
             min-width: 0;
             flex: 1;
         }
@@ -314,13 +329,6 @@
         .snapshot-meta {
             font-size: 11px;
             color: #999;
-        }
-
-        .snapshot-actions {
-            display: flex;
-            gap: 4px;
-            margin-left: 8px;
-            flex-shrink: 0;
         }
 
         .btn-sm {
