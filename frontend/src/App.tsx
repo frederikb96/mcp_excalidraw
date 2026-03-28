@@ -342,6 +342,7 @@ function App(): JSX.Element {
       const res = await fetch(`/api/snapshots/${encodeURIComponent(name)}/restore`, { method: 'POST' })
       const data = await res.json()
       if (data.success) {
+        userInteractedRef.current = false
         await loadExistingElements()
         setCurrentSnapshot(name)
         setHasUnsavedChanges(false)
@@ -989,6 +990,23 @@ function App(): JSX.Element {
             </button>
             {showSnapshots && (
               <div className="snapshot-panel">
+                <div className="snapshot-bottom">
+                  <button
+                    className="btn-sm btn-primary"
+                    onClick={saveCurrentSnapshot}
+                    disabled={!currentSnapshot || snapshotLoading}
+                    title={currentSnapshot ? `Overwrite "${currentSnapshot}"` : 'Load a diagram first'}
+                  >
+                    💾 Save
+                  </button>
+                  <button
+                    className="btn-sm btn-success"
+                    onClick={saveAsNewSnapshot}
+                    disabled={snapshotLoading}
+                  >
+                    + Save as new
+                  </button>
+                </div>
                 <div className="snapshot-filter">
                   <input
                     type="text"
@@ -1020,23 +1038,6 @@ function App(): JSX.Element {
                     ))}
                   </div>
                 )}
-                <div className="snapshot-bottom">
-                  <button
-                    className="btn-sm btn-primary"
-                    onClick={saveCurrentSnapshot}
-                    disabled={!currentSnapshot || snapshotLoading}
-                    title={currentSnapshot ? `Overwrite "${currentSnapshot}"` : 'Load a diagram first'}
-                  >
-                    💾 Save
-                  </button>
-                  <button
-                    className="btn-sm btn-success"
-                    onClick={saveAsNewSnapshot}
-                    disabled={snapshotLoading}
-                  >
-                    + Save as new
-                  </button>
-                </div>
               </div>
             )}
           </div>
