@@ -128,7 +128,9 @@ jobs:
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "value=pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
           else
-            echo "value=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            # Strip 'v' prefix for semver tags (metadata-action creates tags without 'v')
+            REF="${{ github.ref_name }}"
+            echo "value=${REF#v}" >> $GITHUB_OUTPUT
           fi
 
       - name: Test Canvas Server image
